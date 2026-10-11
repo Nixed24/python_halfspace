@@ -9,14 +9,13 @@ Created on Tue Oct  6 14:08:05 2026
 EPSILON = 10 ** -8
 
 import numpy as np
+from matplotlib import pyplot as plt
+
 def magnitude_3(vector):
     return vector[0]**2 + vector[1]**2 + vector[2]**2
 def to_unit_vector(vector):
     return vector / magnitude_3(vector)
 class Plane:
-    def __init__(self, normal, distance):
-        self.normal = normal
-        self.distance = distance
     def get_dummy_point(self):
         try:
             return np.array([(self.distance/self.normal[0]), 0,0])
@@ -27,29 +26,51 @@ class Plane:
                 return np.array([0, 0, self.distance/self.normal[2]])
         # then crash
         return
+    def __init__(self, normal, distance):
+        self.normal = normal
+        self.distance = distance
+        self.dummy_point = self.get_dummy_point()
+    def get_half_space_value(self, point):
+        return np.dot((point - self.dummy_point), self.normal)
     def get_displacement_from(self, point):
         return (magnitude_3(point) * np.dot(self.normal, point)) - self.distance
     def get_distance_from(self, point):
         return np.abs(self.get_displacement_from(self, point))
+    def get_displacement_in_direction(self, point, vec):
+        cos_theta = np.dot(self.normal, vec)
+        if cos_theta == 0:
+            return np.nan
+        perp_disp = self.get_displacement_from(point)
+        vec_disp = perp_disp / cos_theta
+        return vec_disp * np.sign(self.get_half_space_value(point))
 # Normal vectors for solids must point outwards (radially away from solid centre (convex remember))
 # -> points inside bounded volume will fall under a condition:
 # dot product of subtraction between unique point and a random point on each plane will always be negative
 # for all planes simultaneously
 # as the angle will be greater than pi/2 for each
 class Solid:
-    def __init__(self, plane_array):
+    def __init__(self, plane_array, dummy_point, complement=False):
+        self.complement = complement
+        self.dummy_point = dummy_point 
+        # if i were to use some routine to make all plane normal vectors point radially outward from dummy_point, a point inside the solid
         self.plane_array = plane_array
     def inside(self, point):
+        half_space_evaluation_array = []
         for plane in self.plane_array:
-            test_point = plane.get_dummy_point()
-            if np.dot((point - test_point), plane.normal) > 0:
-                return False
-        return True
+            half_space_evaluation_array.append(plane.get_half_space_value(point))
+        condition = max(half_space_evaluation_array)
+        if self.complement == True:
+            condition = -1 * condition
+        if condition < 0:
+            return -1 #inside
+        if condition == 0: # tolerance (and also possibly tolerance for inside/outside)
+            return 0 #on surface
+        return 1 #outside
     def get_nearest_plane(self, point):
         distances = []
         for plane in self.plane_array:
             distances.append(plane.get_distance_from(point))
-        if self.inside(point) == True:
+        if self.inside(point) == -1:
             return np.argmin(distances)
         current_min_index = np.argmin(distances)
         for i in range (len(self.plane_array)):
@@ -57,23 +78,96 @@ class Solid:
                 distances = np.delete(distances, current_min_index)
             else:
                 return current_min_index
-        return
+        return "error"
+class CompoundSolid:
+    def __init__(self, solid_array, relationship_array):
+        self.solid_array = solid_array
+        self.relationship_array = relationship_array
+        if self.relationship_array == "auto":
+            self.relationship_array = np.zeros(len(solid_array))
+        # column n: relationship of solid at n'th index of solid_array to compound solid
+        # -1: OR (union)
+        # 1: AND (intersection? just semantic)
+    def inside(self, point):
+        inside_array = []
+        for i, s in enumerate(self.solid_array):
+            current_inside = s.inside(point)
+            inside_array.append(current_inside)
+            if current_inside == 1 and self.relationship_array[i] == 1:
+                return 1 # We are outside of an AND solid => can't be inside => stop
+            if current_inside == -1 and self.relationship_array[i] == -1:
+                return -1 # We are inside of an OR solid => must be inside => stop
+            """
+            ### dangerous
+            if current_inside == 0 and self.relationship_array[i] == -1:
+                return 0 # We are on the surface of an OR solid => must be at least on surface => stop
+            ### This isn't exactly accurate because being on the surface of a U subsolid could also coincide with being inside another subsolid
+            ### in which case the output would be ambiguous
+            """
+        return min(inside_array)
 
 # define planes
 D = 1
 planes = [Plane([1,0,0], D),Plane([-1,0,0], D),Plane([0,1,0], D),Plane([0,-1,0], D),Plane([0,0,1], D),Plane([0,0,-1], D)]
-cube = Solid(planes)
+cube = Solid(planes, [0,0,0])
 
-test_space_x = np.linspace(-1.9, -1.1, 100)
-test_space_y = np.linspace(-1.99, -1.1, 100)
-test_space_z = np.linspace(-1.99, -1.1, 100)
-#test_mesh = np.meshgrid(test_space_x, test_space_y, test_space_z)
-inside_test = cube.inside([0,0,0])
+# inside test
 
-for i in range (100):
-    for j in range(100):
-        for k in range (100):
-            if cube.inside([test_space_x[i],test_space_y[j],test_space_z[k]]) == True:
-                print("he ATE them")
-print("donesies")
-    
+test_space_x = np.random.uniform(-2, 2, 15)
+test_space_y = np.random.uniform(-2, 2, 15)
+test_space_z = np.random.uniform(-2, 2, 15)
+
+test_space = np.vstack((test_space_x, test_space_y, test_space_z))
+
+inside_points = []
+surface_points = []
+outside_points = []
+
+inside_test = np.zeros(test_space.shape[1])
+
+for i in range (test_space.shape[1]):
+    if cube.inside(test_space[:,i]) == -1:
+        inside_test[i] = -1
+    elif cube.inside(test_space[:,i]) == 1:
+        inside_test[i] = 1
+    else:
+        inside_test[i] = 0
+fig, (axes_xy, axes_xz, axes_yz) = plt.subplots(1, 3, figsize=(18,6))
+axes_xy.set_title("xy")
+axes_xy.set_xlim(-2,2)
+axes_xy.set_ylim(-2,2)
+axes_xz.set_title("xz")
+axes_xz.set_xlim(-2,2)
+axes_xz.set_ylim(-2,2)
+axes_yz.set_title("yz")
+axes_yz.set_xlim(-2,2)
+axes_yz.set_ylim(-2,2)
+for i in range (test_space.shape[1]):
+    if inside_test[i] == -1:
+        axes_xy.plot(test_space[:,i][0], test_space[:,i][1], "go", ms=3)
+        axes_xz.plot(test_space[:,i][0], test_space[:,i][2], "go", ms=3)
+        axes_yz.plot(test_space[:,i][1], test_space[:,i][2], "go", ms=3)
+    elif inside_test[i] == 0:
+        axes_xy.plot(test_space[:,i][0], test_space[:,i][1], "bo", ms=3)
+        axes_xz.plot(test_space[:,i][0], test_space[:,i][2], "bo", ms=3)
+        axes_yz.plot(test_space[:,i,1], test_space[:,i][2], "bo", ms=3)
+    elif inside_test[i] == 1:
+        axes_xy.plot(test_space[:,i][0], test_space[:,i][1], "ro", ms=3)
+        axes_xz.plot(test_space[:,i][0], test_space[:,i][2], "ro", ms=3)
+        axes_yz.plot(test_space[:,i][1], test_space[:,i][2], "ro", ms=3)
+axes_xy.grid()
+axes_xz.grid()
+axes_yz.grid()
+
+##############
+
+
+#colour contour plot or something like that
+# distance test: short
+
+##############
+
+# distance test: long
+
+##############
+                
