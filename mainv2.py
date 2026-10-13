@@ -28,13 +28,13 @@ class Surface:
             return InsideStates.ON_SURFACE
 
     def intersection(self, point, surface):
-        pass
+        np.max([self.implicit_function(point), surface.implicit_function(point)])
 
     def union(self, point, surface):
-        pass
+        np.min([self.implicit_function(point), surface.implicit_function(point)])
 
     def subtraction(self, point, surface):
-        pass
+        np.max([self.implicit_function(point), -surface.implicit_function(point)])
 
 class Plane(Surface):
     def __init__(self, n, d):
@@ -45,36 +45,22 @@ class Plane(Surface):
     def implicit_function(self, point):
         return np.dot(point, self.normal) - self.d
 
-    def intersection(self, point, surface):
-        np.max([self.implicit_function(point), surface.implicit_function(point)])
-
-    def union(self, point, surface):
-        np.min([self.implicit_function(point), surface.implicit_function(point)])
-
-    def subtraction(self, point, surface):
-        np.max([self.implicit_function(point), -surface.implicit_function(point)])
-
     def distance_to_in(self, point, v):
         return (self.d - np.dot(self.normal, point))/np.dot(self.normal, v)
 
 class CompositeSurface(Surface):
-    def __init__(self, surfaces, union_type:UnionTypes):
+    def __init__(self, surfaces, union_type):
         super().__init__()
         self.surfaces = np.array(surfaces)
         self.union_type = union_type
 
+    """
     def add_surface(self, surface):
-        self.surfaces = np.append(self.surfaces, surface)
-
-    def intersection(self, point, ):
-        return np.max([surface.implicit_function(point) for surface in self.surfaces])
-
-    def union(self, point):
-        return np.min([surface.implicit_function(point) for surface in self.surfaces])
+        self.surfaces = np.append(self.surfaces, surface)"""
 
     def implicit_function(self, point):
         if self.union_type == UnionTypes.UNION:
-            return self.union(point)
+            return np.max([surface.implicit_function(point) for surface in self.surfaces])
         elif self.union_type == UnionTypes.INTERSECTION:
             return self.intersection(point)
         else:
@@ -120,6 +106,15 @@ def main():
               Plane([-1, 0, 0], 4),
               Plane([0, -1, 0], 4),
               Plane([0, 0, -1], 1)]
+
+    cube_dictionary = {
+        Plane([1, 0, 0], 1):UnionTypes.INTERSECTION,
+        Plane([0, 1, 0], 1):UnionTypes.INTERSECTION,
+        Plane([0, 0, 1], 1):UnionTypes.INTERSECTION,
+        Plane([-1, 0, 0], 2):UnionTypes.INTERSECTION,
+        Plane([0, -1, 0], 2):UnionTypes.INTERSECTION,
+        Plane([0, 0, -1], 1):UnionTypes.INTERSECTION
+    }
 
     cube = CompositeSurface(planes, UnionTypes.INTERSECTION)
     cube2 = CompositeSurface(planes2, UnionTypes.INTERSECTION)
