@@ -26,6 +26,30 @@ class Surface:
         return 0
     def inside(self, point):
         return 0
+class InfiniteCylinder(Surface):
+    def __init__(self, radius=1, axis=np.array([0,0,1]), pos=np.array([0,0,1])):
+        self.radius = radius
+        self.axis = axis
+        self.pos = pos
+    def implicit_function(self, point):
+        for i in range (3):
+            if self.axis[i] == 0:
+                continue
+            lambda_perp = (point[i] - self.pos[i]) / self.axis[i]
+        aligned_point = self.pos + (lambda_perp * self.axis)
+        distance = np.abs(aligned_point - point)
+        if distance < self.radius:
+            return -1
+        if np.isclose(distance, self.radius):
+            return 0
+        else:
+            return 1
+        return
+    def intersection(self, point, vec=0): # perp dist between 2 lines
+        if isinstance(vec, int):
+            vec = -1 * point
+    def inside(self, point):
+        return self.implicit_function(point)
 class Plane(Surface):
     def __init__(self, normal, distance):
         self.normal = normal
