@@ -10,13 +10,28 @@ from matplotlib import pyplot as plt
 
 EPSILON = 10 ** -8
 INFINITY_POINT = np.array([np.inf, np.inf, np.inf])
-
+np.seterr(all="warn")
 def magnitude_3(vector):
     return np.sqrt(vector[0]**2 + vector[1]**2 + vector[2]**2)
 def to_unit_vector(vector):
     if vector[0] == 0 and vector[1] == 0 and vector[2] == 0:
         return vector
     return vector / magnitude_3(vector)
+def shortest_vector_point_line(p_1, v_1, p_2):
+    return -1
+def shortest_vector_between_lines(p_1, p_2, v_1, v_2):
+    M = np.array([[np.dot(v_1, v_1), -1 * np.dot(v_1,v_2)],
+                  [np.dot(v_1 ,v_2), -1 * np.dot(v_2, v_2)]])
+    v = np.array([np.dot((p_2 - p_1), v_1),np.dot((p_2 - p_1), v_2)])
+    try:
+        M_inv = np.linalg.inv(M)
+    except np.linalg.LinAlgError:
+        return shortest_vector_point_line(p_1, v_1, p_2)
+    lambda_p, mu_p = np.matmul(M_inv, v)[0], np.matmul(M_inv, v)[1]
+    point_1 = p_1 + (lambda_p * v_1)
+    point_2 = p_2 + (mu_p * v_2)
+    vector = point_2 - point_1
+    return vector
 class Surface:
     def __init__(self):
         return 0
@@ -27,27 +42,67 @@ class Surface:
     def inside(self, point):
         return 0
 class InfiniteCylinder(Surface):
-    def __init__(self, radius=1, axis=np.array([0,0,1]), pos=np.array([0,0,1])):
+    def get_major_axis(self, axis): # get any axis really i just say major for laughs
+        major_idx = np.squeeze(np.argmax(axis))
+        if np.max(axis) == 1:
+            major_idx -= 1 # 0 -> 2 (-1); 1 -> 0, 2-> 1
+        returned_array = np.zeros(3)
+        returned_array[major_idx] = 1
+        return returned_array
+    def __init__(self, radius=1, axis=np.array([0,0,1]), pos=np.array([0,0,0])):
         self.radius = radius
-        self.axis = axis
+        self.axis = to_unit_vector(axis)
         self.pos = pos
+        
+        self.major_axis = self.get_major_axis(axis)
+        self.radial_axis = np.cross(self.major_axis, axis)
+        self.azimuthal_axis = np.cross(self.radial_axis, self.axis)
+        self.rotation_matrix = np.transpose(np.vstack((self.axis, self.radial_axis, self.azimuthal_axis)))
+        self.diag_matrix = np.linalg.inv(self.rotation_matrix)
+        self.diag_origin = np.matmul(self.diag_matrix, self.pos)
+        self.r_idx = np.argmax(np.matmul(self.diag_matrix, self.radial_axis))
+        self.a_idx = np.argmax(np.matmul(self.diag_matrix, self.azimuthal_axis))
     def implicit_function(self, point):
-        for i in range (3):
-            if self.axis[i] == 0:
-                continue
-            lambda_perp = (point[i] - self.pos[i]) / self.axis[i]
-        aligned_point = self.pos + (lambda_perp * self.axis)
-        distance = np.abs(aligned_point - point)
-        if distance < self.radius:
+        try:
+            diag_point = np.matmul(self.diag_matrix, point)
+        except:
+            print(self.diag_matrix)
+            print(point)
+            raise KeyboardInterrupt("Caught")
+        perp_dist = np.sqrt((self.diag_origin[self.a_idx] - diag_point[self.a_idx])**2 + \
+                    (self.diag_origin[self.r_idx] - diag_point[self.r_idx])**2)
+        if perp_dist < self.radius:
             return -1
-        if np.isclose(distance, self.radius):
+        if np.isclose(perp_dist, self.radius):
             return 0
         else:
             return 1
         return
-    def intersection(self, point, vec=0): # perp dist between 2 lines
+    def intersection(self, point, vec=0):
         if isinstance(vec, int):
             vec = -1 * point
+        diag_point = np.matmul(self.diag_matrix, point)
+        diag_vec = np.matmul(self.diag_matrix, vec)
+        j = self.r_idx
+        k = self.a_idx
+        a = diag_vec[j]**2 + diag_vec[k]**2
+        b = 2 * (diag_point[j]*diag_vec[j] + diag_point[k]*diag_vec[k] -\
+                 diag_vec[j]*self.diag_origin[j] - \
+                 diag_vec[k]*self.diag_origin[k])
+        c = diag_point[j]**2 + diag_point[k]**2 +\
+            self.diag_origin[j]**2 + self.diag_origin[k]**2 -\
+            2 * diag_point[j] * self.diag_origin[j] - \
+            2 * diag_point[k] * self.diag_origin[k] -\
+                self.radius**2
+        if b**2 - 4 * a *c < 0:
+            return INFINITY_POINT
+        lambda_1 = (- b + np.sqrt(b**2 - 4 * a * c)) / (2*a)
+        lambda_2 = (- b - np.sqrt(b**2 - 4 * a * c)) / (2*a)
+        point_1 = point + lambda_1 * vec
+        point_2 = point + lambda_2 * vec
+        return_array = np.vstack((point_1, point_2))
+        #print(return_array)
+        return return_array
     def inside(self, point):
         return self.implicit_function(point)
 class Plane(Surface):
@@ -84,7 +139,7 @@ class Plane(Surface):
 # for all planes simultaneously
 # as the angle will be greater than pi/2 for each
 class Solid:
-    def __init__(self, surf_array, dummy_point, complement=False):
+    def __init__(self, surf_array, dummy_point=np.array([0,0,0]), complement=False):
         self.complement = complement
         self.dummy_point = dummy_point 
         # if i were to use some routine to make all plane normal vectors point radially outward from dummy_point, a point inside the solid
@@ -208,27 +263,34 @@ planes_2 = [Plane(np.array([1,0,0]), 3),\
           Plane(np.array([0,0,1]), D),\
           Plane(np.array([0,0,-1]), D)]
 cube_2 = Solid(planes_2, [2,2,0])
+
+infinite_cylinder = InfiniteCylinder(1, np.array([np.sqrt(2),np.sqrt(2),0]), np.array([-0.5,0,0]))
+cap_1 = Plane(np.array([np.sqrt(2),np.sqrt(2),0]), np.sqrt(2))
+cap_2 = Plane(np.array([-1 * np.sqrt(2),-1 * np.sqrt(2),0]), np.sqrt(2))
+#infinite_cylinder_solid = Solid([infinite_cylinder])
+infinite_cylinder_solid = Solid([infinite_cylinder, cap_1, cap_2])
 # inside test
-space_size = 500
+space_size = 5000
 
 cube_12 = CompoundSolid([cube, cube_2], "auto")
 
+test_z = 0
 test_space_x = np.random.uniform(-2, 2, space_size)
 test_space_y = np.random.uniform(-2, 2, space_size)
-test_space_z = np.zeros(space_size)
+test_space_z = np.ones(space_size) * test_z
 test_space = np.vstack((test_space_x, test_space_y, test_space_z))
 
 inside_test = np.zeros(test_space.shape[1])
 
 for i in range (test_space.shape[1]):
-    if cube_12.inside(test_space[:,i]) == -1:
+    if infinite_cylinder_solid.inside(test_space[:,i]) == -1:
         inside_test[i] = -1
-    elif cube_12.inside(test_space[:,i]) == 1:
+    elif infinite_cylinder_solid.inside(test_space[:,i]) == 1:
         inside_test[i] = 1
     else:
         inside_test[i] = 0
 fig, axes_xy = plt.subplots(1, 1, figsize=(6,6))
-axes_xy.set_title("xy inside test")
+axes_xy.set_title(f"xy inside test (z={test_z})")
 axes_xy.set_xlabel("x")
 axes_xy.set_ylabel("y")
 set_lims(axes_xy)
@@ -239,8 +301,8 @@ for i in range (test_space.shape[1]):
         axes_xy.plot(test_space[:,i][0], test_space[:,i][1], "bo", ms=3)
     elif inside_test[i] == 1:
         axes_xy.plot(test_space[:,i][0], test_space[:,i][1], "ro", ms=3)
-plot_cube_lines(axes_xy)
-plot_cube_2_lines(axes_xy)
+#plot_cube_lines(axes_xy)
+#plot_cube_2_lines(axes_xy)
 axes_xy.grid()
 
 ##############
@@ -254,22 +316,23 @@ axes_xy.grid()
 # distance test: long
 
 
-test_space_x = np.linspace(-1.5, 4.5, 128)
-test_space_y = np.linspace(-1.5, 4.5, 128)
-test_space_z = np.zeros(128)
+test_space_size_2 = 128
+test_space_x = np.linspace(-3, 3, test_space_size_2)
+test_space_y = np.linspace(-3, 3, test_space_size_2)
+test_space_z = np.ones(test_space_size_2) * test_z
 
-mesh_x = np.zeros((128,128))
-mesh_y = np.zeros((128,128))
-mesh_z = np.zeros((128,128))
+mesh_x = np.zeros((test_space_size_2,test_space_size_2))
+mesh_y = np.zeros((test_space_size_2,test_space_size_2))
+mesh_z = np.zeros((test_space_size_2,test_space_size_2))
 dummy_z = 0
 for i_y, y in enumerate(test_space_y):
     for i_x, x in enumerate(test_space_x):
         mesh_x[i_y][i_x] = x
         mesh_y[i_y][i_x] = y
-        mesh_z[i_y][i_x] = np.abs(cube_12.get_shortest_distance_in_direction(np.array([x, y, dummy_z])))
+        mesh_z[i_y][i_x] = np.abs(infinite_cylinder_solid.get_shortest_distance_in_direction(np.array([x, y, dummy_z])))
         #plane_buffer = cube.get_nearest_plane(np.array([x,y,0]))
 fig, ax = plt.subplots(1,1, figsize=(6,6))
-ax.set_title("directional distance test")
+ax.set_title(f"directional (toward origin) distance test (z = {test_z})")
 ax.set_xlabel("x")
 ax.set_ylabel("y")
 ax.contourf(mesh_x, mesh_y, mesh_z)
