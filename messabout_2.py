@@ -41,6 +41,76 @@ class Surface:
         return 0
     def inside(self, point):
         return 0
+class Quadric(Surface):
+    def __init__(self, M=None):
+        self.M = M
+        if self.M == None:
+            M = np.identity(4)
+            M[-1][-1] = -1
+            self.M = M
+    def make_cylinder(self):
+        M = np.identity(4)
+        M[-1][-1] = -1
+        M[2][2] = 0
+        self.M = M
+        return
+    def make_rugby_ball(self):
+        M = np.identity(4)
+        M[-1][-1] = -1
+        M[1][1] = 0.33
+        self.M = M
+        return
+    def translate(self, vec):
+        if vec.shape != (3,):
+            print("No.")
+            return
+        vec = -1 * vec
+        matrix_affine = np.identity(4)
+        for i in range (3):
+            matrix_affine[i][-1] = vec[i]
+        new_M = np.transpose(matrix_affine) @ self.M @ matrix_affine
+        self.M = new_M
+        return
+    def rotate_matrix(self, rotation_matrix):
+        if rotation_matrix.shape != (3,3):
+            print("No.")
+            return
+        matrix_affine = np.identity(4)
+        for i in range (3):
+            for j in range(3):
+                matrix_affine[i][j] = rotation_matrix[i][j] 
+        new_M = np.transpose(matrix_affine) @ self.M @ matrix_affine
+        self.M = new_M
+    def implicit_function(self, point):
+        p_affine = np.array([*point, 1])
+        x_M = np.vecmat(p_affine, self.M)
+        x_M_x = np.dot(x_M, p_affine)
+        if x_M_x < 0:
+            return -1
+        elif np.isclose(x_M_x, 0):
+            return 0
+        return 1
+    def get_intersection_multipliers(self, point, vec):
+        # In some cases, rays can be parallel to the surface, so need to implement something for that
+        d_affine = np.array([*vec, 0])
+        p_affine = np.array([*point, 1])
+        d_dagger_M = np.vecmat(d_affine, self.M)
+        a = np.dot(d_dagger_M, d_affine)
+        b = np.dot((2 * d_dagger_M), p_affine)
+        c = np.dot(np.vecmat(p_affine, self.M), p_affine)
+        # Could do a discriminant check here
+        dir_multipliers = np.roots([a,b,c])
+        return dir_multipliers
+    def intersection(self, point, vec):
+        intersection_points = np.zeros(3)
+        intersection_multipliers = self.get_intersection_multipliers(point, vec)
+        for mult in intersection_multipliers:
+            if mult >= 0:
+                intersection_points = np.vstack((intersection_points, point + (mult * vec)))
+        intersection_points = intersection_points[1:]
+        return intersection_points
+    def inside(self, point):
+        return self.implicit_function(point)
 class InfiniteCylinder(Surface):
     def get_major_axis(self, axis): # get any axis really i just say major for laughs
         major_idx = np.squeeze(np.argmax(axis))
@@ -265,10 +335,22 @@ planes_2 = [Plane(np.array([1,0,0]), 3),\
 cube_2 = Solid(planes_2, [2,2,0])
 
 infinite_cylinder = InfiniteCylinder(1, np.array([np.sqrt(2),np.sqrt(2),0]), np.array([-0.5,0,0]))
+quadric_sphere = Quadric()
+quadric_rugby_ball = Quadric()
+quadric_rugby_ball.make_rugby_ball()
 cap_1 = Plane(np.array([np.sqrt(2),np.sqrt(2),0]), np.sqrt(2))
 cap_2 = Plane(np.array([-1 * np.sqrt(2),-1 * np.sqrt(2),0]), np.sqrt(2))
 #infinite_cylinder_solid = Solid([infinite_cylinder])
 infinite_cylinder_solid = Solid([infinite_cylinder, cap_1, cap_2])
+quadric_sphere.translate(np.array([1,1,0]))
+#quadric_rugby_ball.translate(np.array([-1,0.25,0]))
+cs = 1/np.sqrt(2)
+rotation = np.array([[cs,-1*cs,0],[cs,cs,0],[0,0,1]])
+quadric_rugby_ball.rotate_matrix(rotation)
+quadric_rugby_ball.translate(np.array([0.4,-0.4,0]))
+qrb_solid = Solid([quadric_rugby_ball])
+test_solid = qrb_solid
+
 # inside test
 space_size = 5000
 
@@ -283,9 +365,9 @@ test_space = np.vstack((test_space_x, test_space_y, test_space_z))
 inside_test = np.zeros(test_space.shape[1])
 
 for i in range (test_space.shape[1]):
-    if infinite_cylinder_solid.inside(test_space[:,i]) == -1:
+    if test_solid.inside(test_space[:,i]) == -1:
         inside_test[i] = -1
-    elif infinite_cylinder_solid.inside(test_space[:,i]) == 1:
+    elif test_solid.inside(test_space[:,i]) == 1:
         inside_test[i] = 1
     else:
         inside_test[i] = 0
@@ -317,8 +399,8 @@ axes_xy.grid()
 
 
 test_space_size_2 = 128
-test_space_x = np.linspace(-3, 3, test_space_size_2)
-test_space_y = np.linspace(-3, 3, test_space_size_2)
+test_space_x = np.linspace(-2, 2, test_space_size_2)
+test_space_y = np.linspace(-2, 2, test_space_size_2)
 test_space_z = np.ones(test_space_size_2) * test_z
 
 mesh_x = np.zeros((test_space_size_2,test_space_size_2))
@@ -329,13 +411,12 @@ for i_y, y in enumerate(test_space_y):
     for i_x, x in enumerate(test_space_x):
         mesh_x[i_y][i_x] = x
         mesh_y[i_y][i_x] = y
-        mesh_z[i_y][i_x] = np.abs(infinite_cylinder_solid.get_shortest_distance_in_direction(np.array([x, y, dummy_z])))
+        mesh_z[i_y][i_x] = np.abs(test_solid.get_shortest_distance_in_direction(np.array([x, y, dummy_z])))
         #plane_buffer = cube.get_nearest_plane(np.array([x,y,0]))
 fig, ax = plt.subplots(1,1, figsize=(6,6))
 ax.set_title(f"directional (toward origin) distance test (z = {test_z})")
 ax.set_xlabel("x")
 ax.set_ylabel("y")
 ax.contourf(mesh_x, mesh_y, mesh_z)
-
 ##############
                 
