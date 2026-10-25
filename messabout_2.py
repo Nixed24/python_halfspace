@@ -344,10 +344,11 @@ cap_2 = Plane(np.array([-1 * np.sqrt(2),-1 * np.sqrt(2),0]), np.sqrt(2))
 infinite_cylinder_solid = Solid([infinite_cylinder, cap_1, cap_2])
 quadric_sphere.translate(np.array([1,1,0]))
 #quadric_rugby_ball.translate(np.array([-1,0.25,0]))
-cs = 1/np.sqrt(2)
-rotation = np.array([[cs,-1*cs,0],[cs,cs,0],[0,0,1]])
+c = np.sqrt(3)/2
+s = 0.5
+rotation = np.array([[c,-1*s,0],[s,c,0],[0,0,1]])
 quadric_rugby_ball.rotate_matrix(rotation)
-quadric_rugby_ball.translate(np.array([0.4,-0.4,0]))
+#quadric_rugby_ball.translate(np.array([0.4,-0.4,0]))
 qrb_solid = Solid([quadric_rugby_ball])
 test_solid = qrb_solid
 
